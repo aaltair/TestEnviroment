@@ -99,7 +99,7 @@ namespace API.Services
 
                 if (slot is null)
                 {
-                    return "No slots found";
+                    throw new AppException("No slots found");
                 }
 
                 ITokenInfo tokenInfo = slot.GetTokenInfo();
@@ -123,7 +123,7 @@ namespace API.Services
 
                     if (certificate is null)
                     {
-                        return "Certificate not found";
+                        throw new AppException("Certificate not found");
                     }
 
                     X509Store store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
@@ -137,7 +137,7 @@ namespace API.Services
                 
 
                     if (foundCerts.Count == 0)
-                        return "no device detected";
+                        throw new AppException("no device detected");
 
                     var certForSigning = foundCerts[0];
                     store.Close();
