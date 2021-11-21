@@ -120,45 +120,44 @@ namespace API.Services
                     };
 
                     IObjectHandle certificate = session.FindAllObjects(certificateSearchAttributes).FirstOrDefault();
-
+                    
                     if (certificate is null)
                     {
+                        session.CloseSession();
                         throw new AppException("Certificate not found");
                     }
+                    var attributeValues = session.GetAttributeValue(certificate, new List<CKA>
+                    {
+                        CKA.CKA_VALUE
+                    });
+                    
+                    var xcert = new X509Certificate2(attributeValues[0].GetValueAsByteArray());
 
-                    X509Store store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
-                    store.Open(OpenFlags.MaxAllowed);
+                    certificateSearchAttributes = new List<IObjectAttribute>()
+                    {
+                        session.Factories.ObjectAttributeFactory.Create(CKA.CKA_CLASS, CKO.CKO_PRIVATE_KEY),
+                        session.Factories.ObjectAttributeFactory.Create(CKA.CKA_KEY_TYPE,CKK.CKK_RSA)
+                    };
 
-                // find cert by thumbprint
-                var foundCerts = store.Certificates.Find(X509FindType.FindByIssuerName, "Egypt Trust Sealing CA", false);
+                    IObjectHandle privateKeyHandler = session.FindAllObjects(certificateSearchAttributes).FirstOrDefault();
 
-                //var foundCerts = store.Certificates.Find(X509FindType.FindBySerialNumber, "2b1cdda84ace68813284519b5fb540c2", true);
-
-                
-
-                    if (foundCerts.Count == 0)
-                        throw new AppException("no device detected");
-
-                    var certForSigning = foundCerts[0];
-                    store.Close();
-
-
+                    RSA privateKey = new TokenRSA(xcert, session, slot, privateKeyHandler);
+                    
                     ContentInfo content = new ContentInfo(new Oid("1.2.840.113549.1.7.5"), data);
 
 
                     SignedCms cms = new SignedCms(content, true);
 
-                    EssCertIDv2 bouncyCertificate = new EssCertIDv2(new Org.BouncyCastle.Asn1.X509.AlgorithmIdentifier(new DerObjectIdentifier("1.2.840.113549.1.9.16.2.47")), this.HashBytes(certForSigning.RawData));
+                    EssCertIDv2 bouncyCertificate = new EssCertIDv2(new Org.BouncyCastle.Asn1.X509.AlgorithmIdentifier(new DerObjectIdentifier("1.2.840.113549.1.9.16.2.47")), this.HashBytes(xcert.RawData));
 
                     SigningCertificateV2 signerCertificateV2 = new SigningCertificateV2(new EssCertIDv2[] { bouncyCertificate });
 
 
-                    CmsSigner signer = new CmsSigner(certForSigning);
+                    CmsSigner signer = new CmsSigner(xcert);
+                    signer.PrivateKey = privateKey;
 
                     signer.DigestAlgorithm = new Oid("2.16.840.1.101.3.4.2.1");
-
-
-
+                    
                     signer.SignedAttributes.Add(new Pkcs9SigningTime(DateTime.UtcNow));
                     signer.SignedAttributes.Add(new AsnEncodedData(new Oid("1.2.840.113549.1.9.16.2.47"), signerCertificateV2.GetEncoded()));
 
